@@ -1,5 +1,7 @@
 # Herdr Peer Agents Skill
 
+[![skills.sh](https://skills.sh/b/msadig/herdr-peer-agents-skill)](https://skills.sh/msadig/herdr-peer-agents-skill)
+
 Agent skill for using [Herdr](https://herdr.dev) as a peer-agent runtime: spawn coding agents in panes, send them prompts, submit them reliably, wait for completion, and read their responses.
 
 Use cases:
@@ -20,7 +22,53 @@ Use cases:
 - At least one coding agent CLI available, e.g. `pi`, `claude`, or `codex`
 - Bash + Python 3 for the helper script
 
-## Install with symlinks
+## Install with skills.sh
+
+The easiest cross-agent install path is the open agent skills CLI from [skills.sh](https://www.skills.sh/).
+
+Install interactively:
+
+```bash
+npx skills add msadig/herdr-peer-agents-skill
+```
+
+Install globally for Claude Code and Codex without prompts:
+
+```bash
+npx skills add msadig/herdr-peer-agents-skill \
+  --global \
+  --agent claude-code \
+  --agent codex \
+  --yes
+```
+
+Install for all detected supported agents:
+
+```bash
+npx skills add msadig/herdr-peer-agents-skill --all
+```
+
+Useful skills.sh commands:
+
+```bash
+# Preview skills available in this repo
+npx skills add msadig/herdr-peer-agents-skill --list
+
+# List installed skills
+npx skills list
+
+# Update installed skills later
+npx skills update herdr-peer-agents
+
+# Remove the skill
+npx skills remove herdr-peer-agents
+```
+
+By default, `skills` can install via symlink so all selected agents share one canonical copy. Use `--copy` only if you specifically need independent copies.
+
+Restart already-running agents so they discover the skill.
+
+## Manual install with symlinks
 
 Clone the repo:
 
