@@ -40,7 +40,7 @@ Use the `pane_id`, `workspace_id`, `tab_id`, and `terminal_id` returned by Herdr
 
 ## Optional helper script
 
-This skill includes a small wrapper at `scripts/herdr-peer.sh` for common operations:
+This skill includes a small wrapper at `scripts/herdr-peer.sh` for common operations. The wrapper caches the pane/terminal IDs returned by `herdr agent start`, waits for Herdr to detect the spawned process as an agent, and then renames it so later calls can use the friendly name reliably.
 
 ```bash
 # from the skill directory, or with an absolute path
@@ -222,6 +222,23 @@ herdr pane close <pane_id>
 ```
 
 ## Troubleshooting
+
+If `herdr agent start <name> -- ...` returns `agent_status: unknown` and `herdr agent get <name>` fails immediately, wait for detection and/or use the returned `pane_id`/`terminal_id`. The helper script does this automatically: it caches both IDs, polls `herdr pane get <pane_id>`, and renames the detected terminal back to the requested friendly name.
+
+Manual recovery:
+
+```bash
+herdr pane get <pane_id>
+herdr agent rename <terminal_id> <friendly-name>
+herdr agent get <friendly-name>
+```
+
+If a prompt is visible in the target composer but does not submit, send Enter again:
+
+```bash
+herdr pane send-keys <pane_id> Enter
+herdr pane send-keys <pane_id> Enter
+```
 
 If `herdr agent wait <name> --status done` fails, use:
 

@@ -129,7 +129,7 @@ Spawn a Codex peer:
 ./scripts/herdr-peer.sh start codex_peer --cwd "$PWD" --split right -- codex
 ```
 
-The helper handles Codex's extra Enter requirement automatically.
+The helper handles Codex's extra Enter requirement automatically. It also caches the `pane_id` and `terminal_id` returned by `herdr agent start`, waits for Herdr to detect the spawned process as an agent, and renames it back to the requested friendly name. This avoids the common timing edge case where a new pane is initially `unknown` and `herdr agent get <name>` fails for a few seconds.
 
 ## Raw Herdr pattern
 
@@ -140,6 +140,32 @@ herdr agent send reviewer "Review this change. Do not edit files."
 herdr pane send-keys <pane_id> Enter
 herdr agent wait reviewer --status idle --timeout 300000
 herdr agent read reviewer --source recent-unwrapped --lines 200
+```
+
+## Detection and naming edge cases
+
+Sometimes Herdr creates the pane before it has detected the foreground process as a coding agent. In that window, `herdr agent start reviewer -- ... pi` may return `agent_status: unknown`, and `herdr agent get reviewer` may fail briefly.
+
+The helper script works around this by:
+
+1. saving the returned `pane_id` and `terminal_id`
+2. polling `herdr pane get <pane_id>` until the agent is detected
+3. running `herdr agent rename <terminal_id> reviewer`
+4. falling back to terminal/pane IDs for send/read/close if the friendly name is not ready yet
+
+Manual recovery if needed:
+
+```bash
+herdr pane get <pane_id>
+herdr agent rename <terminal_id> reviewer
+herdr agent send <terminal_id> "hello"
+herdr pane send-keys <pane_id> Enter
+```
+
+If the message appears in the peer composer but does not run, send Enter again:
+
+```bash
+herdr pane send-keys <pane_id> Enter
 ```
 
 ## Notes
