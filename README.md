@@ -148,18 +148,28 @@ Sometimes Herdr creates the pane before it has detected the foreground process a
 
 The helper script works around this by:
 
-1. saving the returned `pane_id` and `terminal_id`
-2. polling `herdr pane get <pane_id>` until the agent is detected
-3. running `herdr agent rename <terminal_id> reviewer`
-4. falling back to terminal/pane IDs for send/read/close if the friendly name is not ready yet
+1. trying `herdr agent start` first
+2. saving the returned `pane_id` and `terminal_id`
+3. polling `herdr pane get <pane_id>` until the agent is detected
+4. running `herdr agent rename <terminal_id> reviewer`
+5. falling back to terminal/pane IDs for send/read/close if the friendly name is not ready yet
+6. if the `agent start` pane disappears or never detects, falling back to the manual pattern: `herdr pane split` + `herdr pane run <agent-command>` + rename after detection
 
 Manual recovery if needed:
 
 ```bash
+# If the pane exists and the agent is detected
 herdr pane get <pane_id>
 herdr agent rename <terminal_id> reviewer
 herdr agent send <terminal_id> "hello"
 herdr pane send-keys <pane_id> Enter
+
+# If agent start failed/disappeared, use the manual start pattern
+herdr pane split <current_pane_id> --direction right --cwd "$PWD" --no-focus
+herdr pane rename <new_pane_id> reviewer
+herdr pane run <new_pane_id> "pi"
+# after Herdr detects the foreground process:
+herdr agent rename <new_terminal_id> reviewer
 ```
 
 If the message appears in the peer composer but does not run, send Enter again:

@@ -115,9 +115,18 @@ agent_kind_for() {
 }
 
 wait_for_detection_and_rename() {
-  local name="$1" pane_id="$2" terminal_id="$3" deadline=$((SECONDS + 45)) out kind status
+  local name="$1" pane_id="$2" terminal_id="$3" deadline=$((SECONDS + 45)) out kind status missing_count=0
   while (( SECONDS < deadline )); do
-    out="$(pane_get_json "$pane_id" || true)"
+    if ! out="$(pane_get_json "$pane_id")"; then
+      missing_count=$((missing_count + 1))
+      if (( missing_count >= 3 )); then
+        echo "Warning: pane $pane_id for peer '$name' disappeared before agent detection." >&2
+        return 1
+      fi
+      sleep 1
+      continue
+    fi
+    missing_count=0
     kind="$(printf '%s' "$out" | json_pane_field agent)"
     status="$(printf '%s' "$out" | json_pane_field agent_status)"
     if [[ -n "$kind" && "$kind" != "unknown" ]]; then
@@ -130,8 +139,8 @@ wait_for_detection_and_rename() {
     fi
     sleep 1
   done
-  echo "Warning: peer '$name' is still not detected as an agent after 45s. Cached pane=$pane_id terminal=$terminal_id; try again after it finishes starting." >&2
-  return 0
+  echo "Warning: peer '$name' is still not detected as an agent after 45s. Cached pane=$pane_id terminal=$terminal_id." >&2
+  return 1
 }
 
 wait_for_idle() {
@@ -145,10 +154,57 @@ wait_for_idle() {
   while (( SECONDS < deadline )); do
     out="$(pane_get_json "$pane_id" || true)"
     status="$(printf '%s' "$out" | json_pane_field agent_status)"
-    [[ "$status" == "idle" ]] && return 0
+    [[ "$status" == "idle" || "$status" == "done" ]] && return 0
     sleep 2
   done
   return 1
+}
+
+shell_join() {
+  local out="" part
+  for part in "$@"; do
+    printf -v part '%q' "$part"
+    out+="${out:+ }$part"
+  done
+  printf '%s' "$out"
+}
+
+select_base_pane() {
+  local workspace="$1" tab="$2" out
+  if [[ -n "$workspace" ]]; then
+    out="$(herdr pane list --workspace "$workspace")"
+  else
+    out="$(herdr pane list)"
+  fi
+  printf '%s' "$out" | python3 -c 'import json,sys
+want_tab=sys.argv[1]
+data=json.load(sys.stdin)
+panes=data.get("result",{}).get("panes",[])
+if want_tab:
+    panes=[p for p in panes if p.get("tab_id")==want_tab]
+if not panes:
+    sys.exit(1)
+focused=[p for p in panes if p.get("focused")]
+print((focused or panes)[0]["pane_id"])' "$tab"
+}
+
+manual_split_start() {
+  local name="$1" cwd="$2" workspace="$3" tab="$4" split="$5" focus="$6"
+  shift 6
+  local agent_cmd=("$@")
+  local base_pane split_json pane_id terminal_id cmdline
+
+  base_pane="$(select_base_pane "$workspace" "$tab")"
+  echo "Falling back to manual pane split from $base_pane, then pane run." >&2
+  split_json="$(herdr pane split "$base_pane" --direction "$split" --cwd "$cwd" "$focus")"
+  printf '%s\n' "$split_json"
+  pane_id="$(printf '%s' "$split_json" | json_pane_field pane_id)"
+  terminal_id="$(printf '%s' "$split_json" | json_pane_field terminal_id)"
+  cache_save "$name" "$pane_id" "$terminal_id"
+  herdr pane rename "$pane_id" "$name" >/dev/null 2>&1 || true
+  cmdline="$(shell_join "${agent_cmd[@]}")"
+  herdr pane run "$pane_id" "$cmdline" >/dev/null
+  wait_for_detection_and_rename "$name" "$pane_id" "$terminal_id" || true
 }
 
 cmd="${1:-}"
@@ -188,14 +244,22 @@ case "$cmd" in
     [[ -n "$tab" ]] && args+=(--tab "$tab")
     args+=(-- "${agent_cmd[@]}")
 
-    start_json="$(herdr "${args[@]}")"
-    printf '%s\n' "$start_json"
-    pane_id="$(printf '%s' "$start_json" | json_agent_field pane_id)"
-    terminal_id="$(printf '%s' "$start_json" | json_agent_field terminal_id)"
-    if [[ -n "$pane_id" && -n "$terminal_id" ]]; then
-      cache_save "$name" "$pane_id" "$terminal_id"
-      wait_for_detection_and_rename "$name" "$pane_id" "$terminal_id"
+    if start_json="$(herdr "${args[@]}" 2>/dev/null)"; then
+      printf '%s\n' "$start_json"
+      pane_id="$(printf '%s' "$start_json" | json_agent_field pane_id)"
+      terminal_id="$(printf '%s' "$start_json" | json_agent_field terminal_id)"
+      if [[ -n "$pane_id" && -n "$terminal_id" ]]; then
+        cache_save "$name" "$pane_id" "$terminal_id"
+        if wait_for_detection_and_rename "$name" "$pane_id" "$terminal_id"; then
+          exit 0
+        fi
+        herdr pane close "$pane_id" >/dev/null 2>&1 || true
+      fi
+    else
+      echo "Warning: herdr agent start failed; trying manual pane split fallback." >&2
     fi
+
+    manual_split_start "$name" "$cwd" "$workspace" "$tab" "$split" "$focus" "${agent_cmd[@]}"
     ;;
 
   ask)

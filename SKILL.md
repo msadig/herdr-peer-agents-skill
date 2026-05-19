@@ -40,7 +40,7 @@ Use the `pane_id`, `workspace_id`, `tab_id`, and `terminal_id` returned by Herdr
 
 ## Optional helper script
 
-This skill includes a small wrapper at `scripts/herdr-peer.sh` for common operations. The wrapper caches the pane/terminal IDs returned by `herdr agent start`, waits for Herdr to detect the spawned process as an agent, and then renames it so later calls can use the friendly name reliably.
+This skill includes a small wrapper at `scripts/herdr-peer.sh` for common operations. The wrapper tries `herdr agent start` first, caches the returned pane/terminal IDs, waits for Herdr to detect the spawned process as an agent, and then renames it so later calls can use the friendly name reliably. If the `agent start` pane disappears or never detects, it falls back to `herdr pane split` + `herdr pane run <agent-command>`.
 
 ```bash
 # from the skill directory, or with an absolute path
@@ -223,14 +223,21 @@ herdr pane close <pane_id>
 
 ## Troubleshooting
 
-If `herdr agent start <name> -- ...` returns `agent_status: unknown` and `herdr agent get <name>` fails immediately, wait for detection and/or use the returned `pane_id`/`terminal_id`. The helper script does this automatically: it caches both IDs, polls `herdr pane get <pane_id>`, and renames the detected terminal back to the requested friendly name.
+If `herdr agent start <name> -- ...` returns `agent_status: unknown` and `herdr agent get <name>` fails immediately, wait for detection and/or use the returned `pane_id`/`terminal_id`. The helper script does this automatically: it caches both IDs, polls `herdr pane get <pane_id>`, and renames the detected terminal back to the requested friendly name. If that pane disappears or never detects, the helper falls back to the manual start pattern: split a pane, run the agent command, then rename after detection.
 
 Manual recovery:
 
 ```bash
+# If the pane exists and the agent is detected
 herdr pane get <pane_id>
 herdr agent rename <terminal_id> <friendly-name>
 herdr agent get <friendly-name>
+
+# If agent start failed/disappeared
+herdr pane split <current_pane_id> --direction right --cwd "$PWD" --no-focus
+herdr pane rename <new_pane_id> <friendly-name>
+herdr pane run <new_pane_id> "pi"
+herdr agent rename <new_terminal_id> <friendly-name>
 ```
 
 If a prompt is visible in the target composer but does not submit, send Enter again:
